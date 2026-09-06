@@ -37,6 +37,8 @@ import {
   showAgentMentionList, hideAgentMentionList, selectMentionAgent, currentMentionQuery, refreshComposerAutocomplete,
 } from "./events/autocomplete.js";
 import { consumeMessageReferences, snapshotMessageReferences } from "./events/references.js";
+import { initComposerMenu } from "./ui/composer-menu.js";
+import { initSelectionActions } from "./ui/selection-actions.js";
 
 export { uploadFile, renderAttachmentChips };
 
@@ -190,7 +192,13 @@ document.addEventListener("hc:durable-message-dispatched", (ev) => {
 
 els.btnSend.addEventListener("click", sendMessage);
 
-els.btnAttach?.addEventListener("click", () => els.fileInput?.click());
+initComposerMenu({
+  button: els.btnAttach,
+  input: els.input,
+  onUpload: () => els.fileInput?.click(),
+  onBrowseFiles: () => toggleFilesSidebar(false),
+});
+initSelectionActions({ messages: els.messages, input: els.input });
 
 els.fileInput?.addEventListener("change", async () => {
   const files = Array.from(els.fileInput.files || []);

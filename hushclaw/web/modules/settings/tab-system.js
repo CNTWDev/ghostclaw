@@ -166,6 +166,9 @@ export function renderSystemTab() {
           <span class="slider"></span>
         </label>
       </div>
+      <div style="margin-top:10px">
+        <a href="/ui-lab.html" target="_blank" rel="noopener" class="settings-inline-link">Open AI interaction UI Lab ↗</a>
+      </div>
     </div>
     <div class="settings-section">
       <h3 class="settings-section-h">Updates</h3>

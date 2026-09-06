@@ -994,36 +994,25 @@ Then re-run this installer."
 
   info "Installing/upgrading packages…"
   "$INSTALL_DIR/venv/bin/pip" install --upgrade pip --quiet
-  "$INSTALL_DIR/venv/bin/pip" install -e "$INSTALL_DIR/repo[server,calendar]" --quiet
+  "$INSTALL_DIR/venv/bin/pip" install -e "$INSTALL_DIR/repo[server,calendar,encryption]" --quiet
   ok "HushClaw installed"
   write_install_state "${LAST_BACKUP_PATH:-}" "ok"
 
-  # ── DB schema migrations (idempotent) ─────────────────────────────────────
-  # Run any missing column additions on an existing memory.db so upgrades
-  # from older versions don't crash with "no such column: scope".
+  # ── Canonical DB schema migration ─────────────────────────────────────────
+  # The application owns the migration ledger, backup, integrity checks, and
+  # permissions. Keep the installer out of schema details so installed builds
+  # and source checkouts cannot drift onto different migration paths.
   if [[ "$OS_NAME" == "macOS" ]]; then
     _DB_DIR="$HOME/Library/Application Support/hushclaw"
   else
     _DB_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/hushclaw"
   fi
   _DB="$_DB_DIR/memory.db"
-  if command -v sqlite3 &>/dev/null && [[ -f "$_DB" ]]; then
-    sqlite3 "$_DB" \
-      "ALTER TABLE notes ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0;" \
-      2>/dev/null || true
-    sqlite3 "$_DB" \
-      "ALTER TABLE notes ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';" \
-      2>/dev/null || true
-    sqlite3 "$_DB" \
-      "CREATE INDEX IF NOT EXISTS notes_scope ON notes(scope);" \
-      2>/dev/null || true
-    sqlite3 "$_DB" \
-      "ALTER TABLE turns ADD COLUMN workspace TEXT NOT NULL DEFAULT '';" \
-      2>/dev/null || true
-    sqlite3 "$_DB" \
-      "ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT '';" \
-      2>/dev/null || true
-  fi
+  section "Migrating Local Database"
+  "$INSTALL_DIR/venv/bin/python" -c \
+    'from hushclaw.config.loader import load_config; from hushclaw.memory.db import open_db; c = open_db(load_config().memory.data_dir); c.close()' \
+    || die "Database migration failed. Existing data was left in place; run: $INSTALL_DIR/venv/bin/hushclaw doctor"
+  ok "Database schema and permissions verified"
 
   # ── AgentOS agent schema migration (one-time, idempotent) ────────────────
   # AgentOS no longer stores business/org fields on agent definitions.  Older
@@ -1157,6 +1146,12 @@ else:
     print(f"summary|No qualifying skills found ({len(skipped)} checked)")
 MIGRATE_PY
   fi
+
+  # ── Encrypt local SQLite state after all plaintext legacy readers finish ──
+  section "Encrypting Local Database"
+  "$INSTALL_DIR/venv/bin/hushclaw" database encrypt \
+    || die "Database encryption failed. The verified pre-encryption database was left recoverable; run: $INSTALL_DIR/venv/bin/hushclaw database status"
+  ok "Database and migration snapshots are encrypted"
 
   # ── Create helper launcher scripts ────────────────────────────────────────
   LAUNCHER="$INSTALL_DIR/hushclaw-start.sh"

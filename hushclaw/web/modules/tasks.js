@@ -4,6 +4,7 @@
 
 import { state, tasksState, send, escHtml, showToast } from "./state.js";
 import { openConfirm } from "./modal.js";
+import { applyAiState } from "./ui/ai-primitives.js";
 
 const TODO_PAGE_LIMIT = 30;
 const WORK_TASK_STATUS_QUEUED = "queued";
@@ -178,6 +179,7 @@ export function buildWorkTaskRow(task) {
   row.className = "todo-row work-task-row";
   row.dataset.id = task.task_id;
   const taskStatus = task.status || WORK_TASK_STATUS_QUEUED;
+  applyAiState(row, taskStatus, { label: `${task.title || task.task_id}: ${taskStatus}` });
 
   const status = document.createElement("span");
   status.className = `work-task-status work-task-status--${taskStatus}`;

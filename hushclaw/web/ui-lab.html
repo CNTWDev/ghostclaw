@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="vector" data-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HushClaw UI Lab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/styles/theme-modes.css">
+  <link rel="stylesheet" href="/styles/ui-foundations.css">
+  <link rel="stylesheet" href="/styles/modal.css">
+  <link rel="stylesheet" href="/styles/chat-product.css">
+  <link rel="stylesheet" href="/styles/ai-primitives.css">
+  <link rel="stylesheet" href="/styles/ui-lab.css">
+</head>
+<body class="ui-lab-page">
+  <header class="ui-lab-header">
+    <div>
+      <span class="ui-lab-kicker">HushClaw standard</span>
+      <h1>AI interaction primitives</h1>
+      <p>One state contract, seven reusable controls, four motion levels.</p>
+    </div>
+    <div class="ui-lab-actions">
+      <button type="button" id="lab-theme" class="secondary">Dark mode</button>
+      <a href="/">Back to HushClaw</a>
+    </div>
+  </header>
+
+  <main class="ui-lab-grid">
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>01</span><div><h2>AgentActivity</h2><p>One quiet signal for waiting and active work.</p></div></div>
+      <div class="ui-lab-canvas" id="lab-activity"></div>
+      <div class="ui-lab-state-buttons" data-target="activity"></div>
+    </section>
+
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>02</span><div><h2>ProcessDisclosure</h2><p>Summary first; evidence and tool details on demand.</p></div></div>
+      <div class="ui-lab-canvas" id="lab-process"></div>
+    </section>
+
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>03</span><div><h2>StreamingMessage</h2><p>Content grows naturally while one edge carries motion.</p></div></div>
+      <div class="ui-lab-canvas">
+        <div class="msg ai msg-streaming" data-ai-state="streaming"><div class="bubble markdown-body"><p>A useful answer appears in meaningful chunks, keeping the layout stable while work continues.</p></div></div>
+      </div>
+    </section>
+
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>04</span><div><h2>ApprovalCard</h2><p>One decision and one dominant action.</p></div></div>
+      <div class="ui-lab-canvas ui-lab-centered"><button type="button" id="lab-approval">Open approval</button></div>
+    </section>
+
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>05</span><div><h2>TaskRow</h2><p>The same runtime language across background work.</p></div></div>
+      <div class="ui-lab-canvas ui-lab-task-list" id="lab-tasks"></div>
+    </section>
+
+    <section class="ui-lab-section">
+      <div class="ui-lab-section-head"><span>06</span><div><h2>ContextCard</h2><p>Evidence stays close to the statement it supports.</p></div></div>
+      <div class="ui-lab-canvas ui-lab-context-list" id="lab-context"></div>
+    </section>
+
+    <section class="ui-lab-section ui-lab-section-wide">
+      <div class="ui-lab-section-head"><span>07</span><div><h2>PromptComposer + SelectionActions</h2><p>Commands, context, agents, and object-local generation share one entry point.</p></div></div>
+      <div class="ui-lab-canvas ui-lab-composer-demo">
+        <div class="msg ai"><div class="bubble" id="lab-selectable">Select part of this assistant response in the product to explain, improve, or shorten it without searching for a separate command.</div></div>
+        <div class="chat-composer" id="chat-composer">
+          <div class="input-wrap"><textarea id="lab-input" rows="2" placeholder="Ask Pip…"></textarea><div class="input-toolbar"><div class="input-primary-actions"><button type="button" id="lab-add" aria-label="Add context or action">+</button><span class="composer-hint">Use / for skills · @ for agents</span></div><button type="button">Send</button></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/modules/ui-lab.js"></script>
+</body>
+</html>

@@ -163,6 +163,7 @@
   <link rel="stylesheet" href="/styles/harness-shell.css">
   <link rel="stylesheet" href="/styles/ui-foundations.css">
   <link rel="stylesheet" href="/styles/chat-product.css">
+  <link rel="stylesheet" href="/styles/ai-primitives.css">
 </head>
 <body>
 
@@ -322,9 +323,9 @@
                 <div class="input-toolbar">
                   <input type="file" id="file-input" multiple style="display:none">
                   <div class="input-primary-actions">
-                    <button id="btn-attach" title="Attach file" aria-label="Attach file" tabindex="-1">📎</button>
+                    <button id="btn-attach" type="button" title="Add context or action" aria-label="Add context or action">📎</button>
                     <div class="ui-slot ui-slot-composer-leading" data-ui-slot="composer.leading"></div>
-                    <span class="composer-hint" data-i18n="composer_hint">Ask Pip to plan, research, or create</span>
+                    <span class="composer-hint" data-i18n="composer_hint">Use / for skills · @ for agents</span>
                   </div>
                   <div class="input-actions">
                     <span class="composer-status-pill" id="session-label"><span data-i18n="session_prefix">session</span>: <span id="session-id-text">—</span></span>

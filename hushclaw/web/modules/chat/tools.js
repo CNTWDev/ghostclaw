@@ -9,6 +9,7 @@ import { state, els, escHtml } from "../state.js";
 import { setMarkdownContent } from "../markdown.js";
 import { resolveFileUrl } from "../http.js";
 import { markGeneratedArtifactsSeen } from "../panels/files.js";
+import { AI_STATES, createProcessDisclosure } from "../ui/ai-primitives.js";
 
 // ── Private scroll/thinking helpers (identical to chat.js, inlined to avoid circularity) ──
 function _scrollToBottom() { els.messages.scrollTop = els.messages.scrollHeight; }
@@ -326,6 +327,13 @@ function _refreshRoundSummary(roundEl) {
     summary.textContent = `${namedTools} ${noun} · ${stateText}`;
   }
 
+  roundEl.updateProcess?.({
+    label: summary.textContent,
+    state: errorCount
+      ? AI_STATES.FAILED
+      : (allSettled && toolLines.length > 0 ? AI_STATES.COMPLETED : AI_STATES.RUNNING),
+  });
+
   if (errorHint) {
     errorHint.textContent = firstErrorText;
     errorHint.style.display = firstErrorText ? "" : "none";
@@ -352,39 +360,11 @@ export function createToolRound(_round, _maxRounds) {
 }
 
 export function insertRoundLine(round, maxRounds) {
-  const wrap = document.createElement("div");
-  wrap.className = "tool-round compact-process collapsed";
-
-  const header = document.createElement("div");
-  header.className = "tool-round-header round-line";
-  header.setAttribute("role", "button");
-  header.setAttribute("tabindex", "0");
-  header.setAttribute("aria-expanded", "false");
-
-  const index = document.createElement("span");
-  index.className = "round-index";
-  index.textContent = `R${round}${maxRounds > 0 ? `/${maxRounds}` : ""}`;
-  const summary = document.createElement("span");
-  summary.className = "tr-summary";
-  summary.textContent = "Processing…";
-  const toggle = document.createElement("span");
-  toggle.className = "tr-toggle";
-  toggle.setAttribute("aria-hidden", "true");
-  header.append(index, summary, toggle);
-
-  const body = document.createElement("div");
-  body.className = "tool-round-body";
-  wrap.append(header, body);
-  const toggleRound = () => {
-    const expanded = !wrap.classList.toggle("collapsed");
-    header.setAttribute("aria-expanded", String(expanded));
-  };
-  header.addEventListener("click", toggleRound);
-  header.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      toggleRound();
-    }
+  const { root: wrap, body } = createProcessDisclosure({
+    index: `R${round}${maxRounds > 0 ? `/${maxRounds}` : ""}`,
+    label: "Processing…",
+    state: AI_STATES.RUNNING,
+    expanded: false,
   });
 
   els.messages.appendChild(wrap);

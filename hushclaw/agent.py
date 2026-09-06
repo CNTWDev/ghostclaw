@@ -59,6 +59,7 @@ class Agent:
                 api_key=self.config.provider.api_key,
                 fts_weight=self.config.memory.fts_weight,
                 vec_weight=self.config.memory.vec_weight,
+                database_encryption=self.config.memory.database_encryption,
             )
 
         self.provider = get_provider(self.config.provider)

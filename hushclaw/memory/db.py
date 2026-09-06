@@ -1,16 +1,32 @@
 """SQLite connection management and schema initialization."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 import sqlite3
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
+from hushclaw.core.storage_security import (
+    create_private_file,
+    ensure_private_dir,
+    ensure_private_file,
+    harden_database_files,
+)
 from hushclaw.memory.sqlite_runtime import configure_sqlite_connection
+from hushclaw.memory.encryption import (
+    DATABASE_ERRORS,
+    OPERATIONAL_ERRORS,
+    connect_database,
+    connect_sqlcipher,
+    get_sqlcipher_driver,
+)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 DB_NAME = "memory.db"
 DB_SIDE_CARS = (DB_NAME, f"{DB_NAME}-wal", f"{DB_NAME}-shm")
+APPLICATION_ID = 0x4853434C  # "HSCL"; identifies HushClaw-owned SQLite files.
 
 
 class MemoryDatabaseError(RuntimeError):
@@ -170,6 +186,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS turns_fts USING fts5(
     content,
     tokenize = "trigram"
 );
+
+CREATE TRIGGER IF NOT EXISTS turns_ad AFTER DELETE ON turns BEGIN
+    DELETE FROM turns_fts WHERE turn_id = old.turn_id;
+END;
 
 CREATE TABLE IF NOT EXISTS session_lineage (
     lineage_id         TEXT PRIMARY KEY,
@@ -956,6 +976,40 @@ END""",
 ]
 
 
+@dataclass(frozen=True)
+class SchemaMigration:
+    version: int
+    name: str
+    statements: tuple[str, ...]
+
+    @property
+    def checksum(self) -> str:
+        payload = "\n-- statement --\n".join(self.statements).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+
+# v1-v6 predate the migration ledger and are normalized by _MIGRATIONS once.
+# Every change after that baseline must be an immutable entry here.
+_VERSIONED_MIGRATIONS = (
+    SchemaMigration(
+        version=7,
+        name="migration-ledger-and-storage-integrity",
+        statements=(
+            """CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                checksum TEXT NOT NULL,
+                applied_at INTEGER NOT NULL
+            )""",
+            """CREATE TRIGGER IF NOT EXISTS turns_ad AFTER DELETE ON turns BEGIN
+                DELETE FROM turns_fts WHERE turn_id = old.turn_id;
+            END""",
+            "DELETE FROM turns_fts WHERE turn_id NOT IN (SELECT turn_id FROM turns)",
+        ),
+    ),
+)
+
+
 def rebuild_fts_trigram(conn: sqlite3.Connection) -> None:
     """Drop and recreate both FTS5 tables with trigram tokenizer, then re-index all rows."""
     conn.executescript("""
@@ -967,11 +1021,15 @@ def rebuild_fts_trigram(conn: sqlite3.Connection) -> None:
         CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
             DELETE FROM notes_fts WHERE note_id = old.note_id;
         END;
+        DROP TRIGGER IF EXISTS turns_ad;
         DROP TABLE IF EXISTS turns_fts;
         CREATE VIRTUAL TABLE turns_fts USING fts5(
             turn_id UNINDEXED, session UNINDEXED, role UNINDEXED, content,
             tokenize = "trigram"
         );
+        CREATE TRIGGER turns_ad AFTER DELETE ON turns BEGIN
+            DELETE FROM turns_fts WHERE turn_id = old.turn_id;
+        END;
     """)
     conn.execute("""
         INSERT INTO notes_fts(rowid, note_id, title, body, tags)
@@ -1007,10 +1065,11 @@ def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, dd
         return
     try:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-    except sqlite3.OperationalError:
-        # Another migration path may already have added it, or the local SQLite
-        # build may reject a duplicate column with a localized message.
-        pass
+    except OPERATIONAL_ERRORS:
+        # A concurrent initializer may have won the race. Never hide a real
+        # migration failure merely because SQLite reports OperationalError.
+        if column not in _table_columns(conn, table):
+            raise
 
 
 def _preflight_legacy_columns(conn: sqlite3.Connection) -> None:
@@ -1061,15 +1120,88 @@ def _db_user_version(conn: sqlite3.Connection) -> int:
     return int(row[0] or 0) if row else 0
 
 
-def _set_db_user_version(conn: sqlite3.Connection) -> None:
-    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+def _run_legacy_migrations(conn: sqlite3.Connection) -> None:
+    """Normalize pre-ledger databases once, surfacing real migration failures."""
+    for stmt in _MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except OPERATIONAL_ERRORS as exc:
+            # ALTER TABLE ADD COLUMN is the only legacy statement expected to
+            # collide. CREATE ... IF NOT EXISTS is intrinsically idempotent.
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
 
-def backup_existing_db(data_dir: Path, db_path: Path) -> Path | None:
+def _apply_versioned_migrations(conn: sqlite3.Connection, from_version: int) -> None:
+    for migration in _VERSIONED_MIGRATIONS:
+        if migration.version <= from_version:
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for stmt in migration.statements:
+                conn.execute(stmt)
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (?,?,?,?)",
+                (migration.version, migration.name, migration.checksum, int(time.time())),
+            )
+            recorded = conn.execute(
+                "SELECT name, checksum FROM schema_migrations WHERE version=?",
+                (migration.version,),
+            ).fetchone()
+            if (
+                recorded is None
+                or recorded["name"] != migration.name
+                or recorded["checksum"] != migration.checksum
+            ):
+                raise sqlite3.DatabaseError(
+                    f"migration ledger mismatch at version {migration.version}"
+                )
+            conn.execute(f"PRAGMA user_version = {migration.version}")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def _verify_migration_ledger(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "schema_migrations"):
+        raise sqlite3.DatabaseError("schema_migrations ledger is missing")
+    expected = {migration.version: migration for migration in _VERSIONED_MIGRATIONS}
+    rows = conn.execute(
+        "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
+    ).fetchall()
+    for row in rows:
+        migration = expected.get(int(row["version"]))
+        if migration is None:
+            continue
+        if row["name"] != migration.name or row["checksum"] != migration.checksum:
+            raise sqlite3.DatabaseError(
+                f"migration ledger mismatch at version {migration.version}"
+            )
+
+
+def _verify_database(conn: sqlite3.Connection) -> None:
+    check = conn.execute("PRAGMA quick_check").fetchone()
+    if not check or str(check[0]).lower() != "ok":
+        detail = check[0] if check else "no result"
+        raise sqlite3.DatabaseError(f"database quick_check failed: {detail}")
+    fk_row = conn.execute("PRAGMA foreign_key_check").fetchone()
+    if fk_row is not None:
+        raise sqlite3.IntegrityError(
+            f"foreign key violation: table={fk_row[0]} rowid={fk_row[1]}"
+        )
+
+
+def backup_existing_db(
+    data_dir: Path,
+    db_path: Path,
+    *,
+    encrypted: bool = False,
+    key: str = "",
+) -> Path | None:
     if not db_path.exists():
         return None
-    backup_dir = data_dir / "backups" / "memory-db"
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = ensure_private_dir(data_dir / "backups" / "memory-db")
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
     backup_path = backup_dir / f"memory-{stamp}.db"
     i = 1
@@ -1078,16 +1210,17 @@ def backup_existing_db(data_dir: Path, db_path: Path) -> Path | None:
         i += 1
 
     try:
-        src = sqlite3.connect(str(db_path))
+        create_private_file(backup_path)
+        src = connect_sqlcipher(db_path, key) if encrypted else sqlite3.connect(str(db_path))
         try:
-            dst = sqlite3.connect(str(backup_path))
+            dst = connect_sqlcipher(backup_path, key) if encrypted else sqlite3.connect(str(backup_path))
             try:
                 src.backup(dst)
             finally:
                 dst.close()
         finally:
             src.close()
-    except sqlite3.Error:
+    except DATABASE_ERRORS:
         copied = False
         for name in DB_SIDE_CARS:
             sidecar = data_dir / name
@@ -1097,26 +1230,27 @@ def backup_existing_db(data_dir: Path, db_path: Path) -> Path | None:
                 copied = True
         if not copied:
             shutil.copy2(db_path, backup_path)
+    ensure_private_file(backup_path)
+    for suffix in ("-wal", "-shm"):
+        ensure_private_file(Path(f"{backup_path}{suffix}"))
     return backup_path
 
 
-def _initialize_schema(conn: sqlite3.Connection) -> None:
+def _initialize_schema(conn: sqlite3.Connection, from_version: int) -> None:
     _preflight_legacy_columns(conn)
     # Initialize schema
     conn.executescript(_SCHEMA)
-    # Apply migrations (idempotent)
-    for stmt in _MIGRATIONS:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+    # Legacy normalization was historically replayed at every startup. Run it
+    # only while crossing into the versioned ledger, then future boots are O(1).
+    if from_version < 7:
+        _run_legacy_migrations(conn)
     conn.commit()
     # Repair FTS5 if it was created with content='notes' (broken schema that causes
     # "no such column: T.body" on any FTS query). Detect by trying a COUNT; if it
     # fails, drop and recreate the FTS table as contentless and re-index everything.
     try:
         conn.execute("SELECT count(*) FROM notes_fts")
-    except sqlite3.OperationalError:
+    except OPERATIONAL_ERRORS:
         conn.executescript("""
             DROP TABLE IF EXISTS notes_fts;
             DROP TRIGGER IF EXISTS notes_ai;
@@ -1161,26 +1295,52 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             rebuild_fts_trigram(conn)
     except Exception:
         pass
-    _set_db_user_version(conn)
+    _apply_versioned_migrations(conn, from_version)
+    conn.execute(f"PRAGMA application_id = {APPLICATION_ID}")
+    _verify_migration_ledger(conn)
+    if from_version < SCHEMA_VERSION:
+        _verify_database(conn)
 
 
-def open_db(data_dir: Path) -> sqlite3.Connection:
+def open_db(
+    data_dir: Path,
+    *,
+    database_encryption: str = "auto",
+) -> sqlite3.Connection:
     """Open (and initialize) the SQLite database."""
     backup_path: Path | None = None
     try:
-        data_dir.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(data_dir)
         db_path = data_dir / DB_NAME
         backup_needed = db_path.exists()
+        if not backup_needed:
+            create_private_file(db_path)
+        else:
+            ensure_private_file(db_path)
         # Autocommit keeps the shared check_same_thread=False connection from
         # carrying one implicit transaction across interleaved async/thread writes.
         # Existing conn.commit() calls remain valid no-ops when no transaction is open.
-        conn = sqlite3.connect(str(db_path), check_same_thread=False, isolation_level=None)
+        conn, encrypted, key = connect_database(
+            data_dir,
+            mode=database_encryption,
+            check_same_thread=False,
+            isolation_level=None,
+        )
         try:
-            configure_sqlite_connection(conn)
-            backup_needed = backup_needed and _db_user_version(conn) < SCHEMA_VERSION
+            row_factory = get_sqlcipher_driver().Row if encrypted else sqlite3.Row
+            configure_sqlite_connection(conn, row_factory=row_factory)
+            current_version = _db_user_version(conn)
+            if current_version > SCHEMA_VERSION:
+                raise sqlite3.DatabaseError(
+                    f"database schema {current_version} is newer than supported {SCHEMA_VERSION}"
+                )
+            backup_needed = backup_needed and current_version < SCHEMA_VERSION
             if backup_needed:
-                backup_path = backup_existing_db(data_dir, db_path)
-            _initialize_schema(conn)
+                backup_path = backup_existing_db(
+                    data_dir, db_path, encrypted=encrypted, key=key
+                )
+            _initialize_schema(conn, current_version)
+            harden_database_files(data_dir, DB_NAME)
             return conn
         except Exception:
             conn.close()

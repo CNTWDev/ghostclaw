@@ -1,0 +1,455 @@
+/*
+ * HushClaw AI interaction primitives.
+ *
+ * This is the final component contract, loaded after feature styles. Motion is
+ * state-driven: one active signal per region, stable layout, and no decorative
+ * loops after work has settled.
+ */
+
+:root {
+  --ai-motion-instant: 120ms;
+  --ai-motion-fast: 160ms;
+  --ai-motion-standard: 240ms;
+  --ai-motion-reveal: 380ms;
+  --ai-motion-ease: cubic-bezier(.22, 1, .36, 1);
+  --ai-state-queued: var(--muted);
+  --ai-state-active: var(--accent);
+  --ai-state-waiting: var(--warn);
+  --ai-state-success: var(--ok);
+  --ai-state-error: var(--err);
+}
+
+/* Shared state semantics */
+[data-ai-state] {
+  --ai-state-color: var(--muted);
+}
+[data-ai-state="running"],
+[data-ai-state="streaming"] { --ai-state-color: var(--ai-state-active); }
+[data-ai-state="waiting_user"] { --ai-state-color: var(--ai-state-waiting); }
+[data-ai-state="completed"] { --ai-state-color: var(--ai-state-success); }
+[data-ai-state="failed"] { --ai-state-color: var(--ai-state-error); }
+[data-ai-state="cancelled"] { --ai-state-color: var(--muted); }
+
+/* AgentActivity — a compact, single-focus signal for all active AI work. */
+.ai-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  max-width: min(620px, 100%);
+  padding: 3px 0;
+  color: color-mix(in srgb, var(--text) 68%, var(--muted));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ai-activity-mark {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(3, 3px);
+  align-items: center;
+  gap: 3px;
+  width: auto;
+  height: 12px;
+}
+
+.ai-activity-mark i {
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--ai-state-color);
+  opacity: .36;
+  transform: translateY(0);
+}
+
+.ai-activity[data-ai-state="running"] .ai-activity-mark i,
+.ai-activity[data-ai-state="streaming"] .ai-activity-mark i {
+  animation: ai-activity-wave 900ms var(--ai-motion-ease) infinite;
+}
+.ai-activity-mark i:nth-child(2) { animation-delay: 110ms !important; }
+.ai-activity-mark i:nth-child(3) { animation-delay: 220ms !important; }
+
+.ai-activity-copy {
+  overflow: hidden;
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-activity-detail {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-activity-elapsed {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes ai-activity-wave {
+  0%, 100% { opacity: .28; transform: translateY(1px); }
+  50% { opacity: 1; transform: translateY(-1px); }
+}
+
+/* ProcessDisclosure — progressive disclosure for reasoning and tool work. */
+.ai-process-disclosure {
+  width: min(100%, var(--chat-reading-width, 800px));
+  margin-inline: auto;
+  border-top: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+}
+
+.ai-process-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px !important;
+  padding: 6px 2px !important;
+  border: 0 !important;
+  background: transparent !important;
+  cursor: pointer;
+}
+
+.ai-process-header:hover,
+.ai-process-header:focus-visible {
+  outline: 0;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface2) 54%, transparent) !important;
+}
+
+.ai-process-index {
+  color: color-mix(in srgb, var(--muted) 82%, var(--text)) !important;
+}
+
+.ai-process-state {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 2px;
+  background: var(--ai-state-color);
+  opacity: .8;
+}
+
+.ai-process-disclosure[data-ai-state="running"] .ai-process-state,
+.ai-process-disclosure[data-ai-state="streaming"] .ai-process-state {
+  animation: ai-process-breathe 1.4s ease-in-out infinite;
+}
+
+.ai-process-summary {
+  color: color-mix(in srgb, var(--text) 62%, var(--muted)) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+}
+
+.ai-process-toggle {
+  transition: transform var(--ai-motion-standard) var(--ai-motion-ease) !important;
+}
+.ai-process-disclosure:not(.collapsed) .ai-process-toggle { transform: rotate(90deg); }
+.ai-process-toggle::before,
+.ai-process-disclosure.collapsed .ai-process-toggle::before { content: "›" !important; }
+
+.ai-process-viewport {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--ai-motion-reveal) var(--ai-motion-ease),
+    opacity var(--ai-motion-standard) ease;
+}
+
+.ai-process-disclosure.collapsed .ai-process-viewport {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.ai-process-body {
+  display: block !important;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 0 4px 5px !important;
+  padding: 1px 0 4px 12px !important;
+}
+
+@keyframes ai-process-breathe {
+  0%, 100% { opacity: .45; transform: scale(.88); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* StreamingMessage — content grows naturally; only the edge signals activity. */
+.msg.ai.msg-streaming .bubble {
+  position: relative;
+  transition: opacity var(--ai-motion-fast) ease;
+}
+.msg.ai.msg-streaming .bubble::after {
+  content: "";
+  position: absolute;
+  display: block !important;
+  top: 7px;
+  left: -12px;
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: ai-stream-breathe 1.6s ease-in-out infinite;
+}
+@keyframes ai-stream-breathe {
+  0%, 100% { opacity: .28; transform: scaleY(.74); }
+  50% { opacity: .92; transform: scaleY(1); }
+}
+
+/* ContextCard — evidence remains adjacent to the content it supports. */
+.ai-context-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface2) 62%, var(--surface));
+  animation: ai-context-in var(--ai-motion-standard) var(--ai-motion-ease) both;
+}
+.ai-context-label {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+.ai-context-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.ai-context-title,
+.ai-context-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-context-title { color: var(--text); font-size: 11.5px; font-weight: 560; }
+.ai-context-detail,
+.ai-context-meta { color: var(--muted); font-size: 10.5px; }
+
+.msg-inline-reference.ai-context-card {
+  display: inline-grid;
+  max-width: min(420px, 100%);
+}
+
+@keyframes ai-context-in {
+  from { opacity: 0; transform: translateY(3px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* PromptComposer — autocomplete and sources are one contextual surface. */
+#chat-composer { position: relative; }
+#chat-composer .input-wrap {
+  transition:
+    border-color var(--ai-motion-fast) ease,
+    box-shadow var(--ai-motion-standard) ease,
+    transform var(--ai-motion-fast) var(--ai-motion-ease);
+}
+
+#chat-composer .agent-mention-list {
+  width: min(calc(100% - 36px), var(--chat-composer-width, 800px));
+  max-height: min(340px, 42vh);
+  margin: 0 auto 8px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 97%, var(--surface2));
+  box-shadow: 0 16px 44px color-mix(in srgb, var(--bg) 18%, transparent);
+  animation: ai-popover-in var(--ai-motion-standard) var(--ai-motion-ease) both;
+}
+
+#chat-composer .mention-item {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.input-primary-actions { position: relative; }
+
+.composer-source-menu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(320px, calc(100vw - 36px));
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 97%, var(--surface2));
+  box-shadow: 0 18px 52px color-mix(in srgb, var(--bg) 22%, transparent);
+  animation: ai-popover-in var(--ai-motion-standard) var(--ai-motion-ease) both;
+}
+
+.composer-source-menu-label {
+  padding: 5px 8px 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+button.composer-source-menu-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+button.composer-source-menu-item:hover,
+button.composer-source-menu-item:focus-visible {
+  outline: 0;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface2) 76%, transparent);
+}
+
+.composer-source-menu-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
+  background: color-mix(in srgb, var(--surface2) 72%, transparent);
+  font: 600 13px/1 var(--sans);
+}
+
+.composer-source-menu-item > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.composer-source-menu-item strong { font-size: 12px; font-weight: 570; }
+.composer-source-menu-item small { color: var(--muted); font-size: 10.5px; font-weight: 400; }
+.composer-source-menu-item kbd {
+  color: var(--muted);
+  font: 500 10px/1 var(--font, monospace);
+}
+.composer-source-menu-separator {
+  height: 1px;
+  margin: 5px 7px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+@keyframes ai-popover-in {
+  from { opacity: 0; transform: translateY(5px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ApprovalCard — compact, explicit, and keyboard-safe. */
+.app-modal-card.ai-approval-card {
+  width: min(92vw, 440px);
+  border-radius: 14px;
+  box-shadow: 0 22px 64px color-mix(in srgb, var(--bg) 34%, #000);
+}
+.ai-approval-card .app-modal-accent { display: none; }
+.ai-approval-card .app-modal-header {
+  padding: 18px 18px 10px;
+  border-bottom: 0;
+  background: transparent;
+}
+.ai-approval-card .app-modal-brand-mark,
+.ai-approval-card .app-modal-kicker { display: none; }
+.ai-approval-card .app-modal-title { font-size: 16px; font-weight: 620; }
+.ai-approval-card .app-modal-body {
+  padding: 4px 18px 16px;
+  color: color-mix(in srgb, var(--text) 68%, var(--muted));
+  font-size: 13px;
+}
+.ai-approval-card .app-modal-footer {
+  padding: 12px 18px 18px;
+  border-top: 0;
+  background: transparent;
+}
+
+/* TaskRow — the same state language outside chat. */
+.work-task-row[data-ai-state] {
+  position: relative;
+  overflow: hidden;
+}
+.work-task-row[data-ai-state]::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ai-state-color);
+  opacity: .75;
+}
+.work-task-row[data-ai-state="running"] .work-task-status {
+  color: var(--ai-state-active);
+}
+
+/* SelectionActions — generative actions appear at the object of intent. */
+.ai-selection-actions {
+  position: fixed;
+  z-index: 2050;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 97%, var(--surface2));
+  box-shadow: 0 14px 42px color-mix(in srgb, var(--bg) 24%, transparent);
+  animation: ai-popover-in var(--ai-motion-fast) var(--ai-motion-ease) both;
+}
+.ai-selection-actions-label {
+  padding: 0 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+button[data-selection-action] {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+  background: transparent;
+  box-shadow: none;
+  font-size: 10.5px;
+}
+button[data-selection-action]:hover,
+button[data-selection-action]:focus-visible {
+  outline: 0;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface2) 80%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-activity-mark i,
+  .ai-process-state,
+  .msg.ai.msg-streaming .bubble::after,
+  .ai-context-card,
+  #chat-composer .agent-mention-list {
+    animation: none !important;
+  }
+  .ai-process-viewport,
+  .ai-process-toggle,
+  #chat-composer .input-wrap {
+    transition: none !important;
+  }
+  .composer-source-menu { animation: none !important; }
+  .ai-selection-actions { animation: none !important; }
+}

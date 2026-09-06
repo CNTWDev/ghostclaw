@@ -1,4 +1,5 @@
 """Tests for the memory subsystem."""
+import os
 import sys
 import sqlite3
 import tempfile
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hushclaw.memory.kinds import DECISION, PROJECT_KNOWLEDGE, TELEMETRY, USER_MODEL
 from hushclaw.memory.store import MemoryStore
-from hushclaw.memory.db import SCHEMA_VERSION
+from hushclaw.memory.db import APPLICATION_ID, SCHEMA_VERSION, MemoryDatabaseError
 from hushclaw.memory.taxonomy import (
     classify_belief_model,
     classify_note,
@@ -67,6 +68,84 @@ def test_current_memory_db_does_not_create_redundant_backup(tmp_path):
 
     backup_dir = tmp_path / "backups" / "memory-db"
     assert not backup_dir.exists()
+
+
+def test_database_upgrade_records_verified_migration_and_private_modes(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(mode=0o755)
+    db_path = data_dir / "memory.db"
+    sqlite3.connect(db_path).close()
+    if os.name == "posix":
+        os.chmod(db_path, 0o644)
+
+    store = MemoryStore(data_dir=data_dir)
+    try:
+        row = store.conn.execute(
+            "SELECT version, name, checksum FROM schema_migrations WHERE version=?",
+            (SCHEMA_VERSION,),
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "migration-ledger-and-storage-integrity"
+        assert len(row["checksum"]) == 64
+        assert store.conn.execute("PRAGMA application_id").fetchone()[0] == APPLICATION_ID
+        assert store.conn.execute("PRAGMA secure_delete").fetchone()[0] == 2
+    finally:
+        store.close()
+
+    if os.name == "posix":
+        assert data_dir.stat().st_mode & 0o777 == 0o700
+        assert db_path.stat().st_mode & 0o777 == 0o600
+        backups = list((data_dir / "backups" / "memory-db").glob("memory-*.db"))
+        assert backups
+        assert backups[0].stat().st_mode & 0o777 == 0o600
+
+
+def test_database_newer_than_runtime_is_never_silently_downgraded(tmp_path):
+    db_path = tmp_path / "memory.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+    conn.close()
+
+    try:
+        MemoryStore(data_dir=tmp_path)
+    except MemoryDatabaseError as exc:
+        assert "newer than supported" in str(exc.cause)
+    else:
+        raise AssertionError("newer database schema should be rejected")
+
+
+def test_turn_delete_removes_fts_row_and_upgrade_cleans_legacy_orphans(tmp_path):
+    store = MemoryStore(data_dir=tmp_path)
+    try:
+        store.save_turn("s-clean", "user", "private text scheduled for deletion")
+        turn = store.conn.execute(
+            "SELECT turn_id FROM turns WHERE session='s-clean' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        store.conn.execute("DELETE FROM turns WHERE turn_id=?", (turn["turn_id"],))
+        assert store.conn.execute(
+            "SELECT 1 FROM turns_fts WHERE turn_id=?", (turn["turn_id"],)
+        ).fetchone() is None
+
+        store.conn.execute("DROP TRIGGER turns_ad")
+        store.conn.execute(
+            "INSERT INTO turns_fts(rowid, turn_id, session, role, content) VALUES (?,?,?,?,?)",
+            (999999, "legacy-orphan", "old", "user", "should disappear"),
+        )
+        store.conn.execute("DELETE FROM schema_migrations WHERE version=?", (SCHEMA_VERSION,))
+        store.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION - 1}")
+    finally:
+        store.close()
+
+    migrated = MemoryStore(data_dir=tmp_path)
+    try:
+        assert migrated.conn.execute(
+            "SELECT 1 FROM turns_fts WHERE turn_id='legacy-orphan'"
+        ).fetchone() is None
+        assert migrated.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='turns_ad'"
+        ).fetchone() is not None
+    finally:
+        migrated.close()
 
 
 def test_file_rating_and_tag_schema_is_available_and_defaults_are_safe(tmp_path):

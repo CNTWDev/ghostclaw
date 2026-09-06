@@ -16,7 +16,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/CNTWDev/hushclaw/master/inst
 irm https://raw.githubusercontent.com/CNTWDev/hushclaw/master/install.ps1 | iex
 ```
 
-The installer clones the repo, creates a venv, wires up PATH, and opens your browser. A setup wizard walks you through the first API key.
+The installer clones the repo, creates a venv, encrypts the local database with
+SQLCipher, wires up PATH, and opens your browser. Existing plaintext databases
+and their migration snapshots are upgraded in place with verified atomic
+cutover. A setup wizard walks you through the first API key.
 
 ```bash
 hushclaw serve                  # personal mode (default)
@@ -55,7 +58,7 @@ HushClaw treats the agent as a long-lived collaborator, not a stateless API wrap
 | **Learning** | Self-improves per turn: reflects on outcomes, patches skills, updates your model |
 | **Context** | Stable/dynamic split with Anthropic KV-cache — up to 75% input token savings |
 | **Harness** | Session-frozen tool surface · on-demand long-tail tools · queryable per-run latency |
-| **Install** | One `curl` command, zero mandatory deps, pure Python stdlib core |
+| **Install** | One command; zero-dependency embeddable core, secured runtime extras bundled by the installer |
 | **UI** | Full browser interface from the same port as the WebSocket API |
 | **Extensibility** | Drop a `.py` to add a tool. Drop a `.md` to add a skill pack. |
 
@@ -285,7 +288,38 @@ model = "claude-sonnet-4-6"
 compact_strategy      = "lossless"
 memory_decay_rate     = 0.0   # > 0 enables Ebbinghaus decay
 serendipity_budget    = 0.0   # > 0 enables cross-domain recall wildcards
+
+[memory]
+database_encryption   = "sqlcipher"  # default for one-click installs
 ```
+
+## Local Data Security
+
+One-click installs encrypt the complete SQLite database—including messages,
+memories, tasks, file metadata, and search indexes—with SQLCipher. The 256-bit
+database key is kept in macOS Keychain, Windows current-user DPAPI, or Linux
+Secret Service. On a headless machine where no credential vault is available,
+HushClaw uses an owner-only key file and reports the fallback so it is never
+mistaken for equivalent protection.
+
+```bash
+hushclaw database status       # encryption, key source, schema and integrity
+hushclaw database harden       # repair owner-only filesystem permissions
+hushclaw database encrypt      # idempotent migration for a developer install
+hushclaw database recovery-key # sensitive: copy once and keep offline
+hushclaw doctor
+```
+
+Keep the recovery key in a password manager or offline vault. HushClaw backup
+archives preserve SQLCipher encryption and deliberately exclude device-local
+key files. On another machine, `backup import` securely prompts for the recovery
+key; non-interactive automation can pipe it with `--database-key-stdin` or set
+`HUSHCLAW_DATABASE_KEY`.
+
+This protects files at rest from casual inspection and ordinary SQLite tools.
+It cannot protect data after HushClaw has unlocked it from malware controlling
+your login session, process-memory inspection, or a compromised OS. FileVault,
+BitLocker, or LUKS is still recommended for whole-device protection.
 
 ## Backup & Migration
 
@@ -302,7 +336,11 @@ Restore it on the new machine:
 hushclaw backup import ~/Desktop/hushclaw-backup.zip
 ```
 
-By default the archive includes your `hushclaw.toml`, local data directory, and custom tools from the config directory. Use `--data-dir` during import if you want to restore into a different location on the new machine.
+By default the archive includes your `hushclaw.toml`, local data directory, and
+custom tools from the config directory. If the source database is encrypted,
+the archived database remains encrypted and no key material is included. Use
+`--data-dir` during import if you want to restore into a different location on
+the new machine; enter the offline recovery key when prompted.
 
 ---
 
@@ -319,11 +357,14 @@ bash install.sh --uninstall --purge    # remove everything including data
 
 # Developer install
 git clone https://github.com/CNTWDev/hushclaw.git && cd hushclaw
-pip install -e ".[server]"    # core + WebSocket server
+pip install -e ".[server,encryption]" # server + SQLCipher database support
 pip install -e ".[all]"       # everything (browser, web fetch, all extras)
 
 # Run tests
 python -m pytest tests/ -v
 ```
 
-**Requirements:** Python 3.11+ · no mandatory third-party packages · API key for chosen provider (or a running Ollama instance) · `websockets>=12.0` auto-installed with `[server]`
+**Requirements:** Python 3.11+ · no mandatory third-party packages for the
+embeddable core · API key for the chosen provider (or a running Ollama
+instance). The one-click installer adds WebSocket, calendar, and SQLCipher
+runtime extras automatically.

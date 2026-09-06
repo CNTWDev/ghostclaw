@@ -42,7 +42,7 @@ const LANGS = {
     mem_clean:       "Clean+Compact",
     // Chat input area
     input_placeholder: "Ask Pip…",
-    composer_hint: "Ask Pip to plan, research, or create",
+    composer_hint: "Use / for skills · @ for agents",
     empty_title: "What are we working on?",
     new_topic: "New Topic",
     export:    "Export",
@@ -182,7 +182,7 @@ const LANGS = {
     mem_search:      "搜索记忆…",
     mem_clean:       "压缩记忆",
     input_placeholder: "和 Pip 说点什么…",
-    composer_hint: "让 Pip 帮你规划、研究或创作",
+    composer_hint: "输入 / 选择技能 · @ 选择 Agent",
     empty_title: "今天想一起完成什么？",
     new_topic: "新话题",
     export:    "导出",

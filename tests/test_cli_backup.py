@@ -1,6 +1,7 @@
 """Tests for backup export/import helpers."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import zipfile
 from pathlib import Path
@@ -42,6 +43,8 @@ def test_create_backup_archive_includes_config_data_and_plugins(tmp_path):
     )
 
     assert archive.exists()
+    if os.name == "posix":
+        assert archive.stat().st_mode & 0o777 == 0o600
     with zipfile.ZipFile(archive) as zf:
         names = set(zf.namelist())
         assert "manifest.json" in names

@@ -1,7 +1,8 @@
-const CACHE = "hushclaw-v30";
+const CACHE = "hushclaw-v31";
 const STATIC = [
   "/",
   "/index.html",
+  "/ui-lab.html",
   "/app.js",
   "/react-dist/react-islands.js",
   "/react-dist/react-islands.css",
@@ -24,6 +25,12 @@ const STATIC = [
   "/styles/harness-shell.css",
   "/styles/ui-foundations.css",
   "/styles/chat-product.css",
+  "/styles/ai-primitives.css",
+  "/styles/ui-lab.css",
+  "/modules/ui-lab.js",
+  "/modules/ui/ai-primitives.js",
+  "/modules/ui/composer-menu.js",
+  "/modules/ui/selection-actions.js",
   "/modules/shell.js",
   "/manifest.json",
   "/icon.svg",

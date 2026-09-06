@@ -16,6 +16,7 @@ import {
   resetActiveRound, finalizeActiveRound, renderToolResult,
 } from "./chat/tools.js";
 import { addCopyActions } from "./chat/export.js";
+import { AI_STATES, applyAiState, createAgentActivity } from "./ui/ai-primitives.js";
 
 // Re-export everything consumers need from the submodules, keeping the public
 // surface of chat.js unchanged.
@@ -176,6 +177,7 @@ function _setAiStreamingState(active) {
   if (!msgEl || !bubbleEl) return;
   msgEl.classList.toggle("msg-streaming", active);
   bubbleEl.classList.toggle("bubble-streaming", active);
+  applyAiState(msgEl, active ? AI_STATES.STREAMING : AI_STATES.COMPLETED);
   if (!active) {
     bubbleEl.classList.remove("bubble-chunk-active");
   }
@@ -765,6 +767,7 @@ function _renderInlineReferences(container, references = []) {
   for (const ref of visible) {
     const item = document.createElement("div");
     item.className = "msg-inline-reference";
+    item.classList.add("ai-context-card");
     const role = ref.role ? `${ref.role}: ` : "";
     item.innerHTML = `
       <span class="msg-inline-reference-label">引用</span>
@@ -985,11 +988,12 @@ export function insertThinkingMsg(startTime = Date.now()) {
   removeThinkingMsg();
   const { msgEl, bubbleEl } = createMsgBubble("ai");
   msgEl.classList.add("thinking-msg");
-  bubbleEl.innerHTML = `<span class="thinking-layout">
-    <span class="thinking-orb" aria-hidden="true"><i></i><i></i><i></i></span>
-    <span class="thinking-copy"></span>
-    <span class="thinking-elapsed"></span>
-  </span>`;
+  const activity = createAgentActivity({
+    label: "正在梳理…",
+    state: AI_STATES.RUNNING,
+    startedAt: startTime,
+  });
+  bubbleEl.replaceChildren(activity);
   bubbleEl.classList.add("thinking-bubble");
   els.messages.appendChild(msgEl);
   _ensureMessagesBottomSentinel();
@@ -1007,6 +1011,15 @@ function _renderThinkingStatus() {
   const bubbleEl = state._thinkingEl.querySelector(".thinking-bubble");
   if (!bubbleEl) return;
   const sec = Math.max(0, Math.floor((Date.now() - (state._thinkingStart || Date.now())) / 1000));
+  const activity = bubbleEl.querySelector(".ai-activity");
+  if (activity?.updateActivity) {
+    activity.updateActivity({
+      label: state._thinkingStatus || "正在梳理…",
+      state: AI_STATES.RUNNING,
+      startedAt: state._thinkingStart || Date.now(),
+    });
+    return;
+  }
   const copy = bubbleEl.querySelector(".thinking-copy");
   const elapsed = bubbleEl.querySelector(".thinking-elapsed");
   if (copy) copy.textContent = state._thinkingStatus || "正在梳理…";

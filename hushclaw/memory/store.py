@@ -14,6 +14,13 @@ from pathlib import Path
 
 from hushclaw.memory.artifacts import ArtifactStore
 from hushclaw.memory.db import DB_NAME, MemoryDatabaseError, backup_existing_db, open_db, rebuild_fts_trigram
+from hushclaw.memory.encryption import (
+    DATABASE_ERRORS,
+    INTEGRITY_ERRORS,
+    OPERATIONAL_ERRORS,
+    DatabaseKeyStore,
+    database_file_format,
+)
 from hushclaw.memory.events import EventStore, _conn_lock
 from hushclaw.memory.markdown import MarkdownStore
 from hushclaw.memory.session_log import SessionLog
@@ -71,6 +78,7 @@ class MemoryStore:
         api_key: str = "",
         fts_weight: float = 0.6,
         vec_weight: float = 0.4,
+        database_encryption: str = "auto",
     ) -> None:
         self.data_dir = data_dir
         self.notes_dir = data_dir / "notes"
@@ -84,7 +92,8 @@ class MemoryStore:
         self.conn: sqlite3.Connection | None = None
         backup_path: Path | None = None
         try:
-            self.conn = open_db(data_dir)
+            self.database_encryption = database_encryption
+            self.conn = open_db(data_dir, database_encryption=database_encryption)
             self._event_store = EventStore(self.conn)
             self.session_log = SessionLog(self.conn, self._event_store)
             self.artifacts = ArtifactStore(self.conn, data_dir)
@@ -100,9 +109,14 @@ class MemoryStore:
             self._backfill_turns_fts()
         except MemoryDatabaseError:
             raise
-        except sqlite3.IntegrityError as exc:
+        except INTEGRITY_ERRORS as exc:
             if self.conn is not None:
-                backup_path = backup_existing_db(data_dir, data_dir / DB_NAME)
+                db_path = data_dir / DB_NAME
+                encrypted = database_file_format(db_path) == "sqlcipher-or-unknown"
+                key = DatabaseKeyStore(data_dir).get()[0] if encrypted else ""
+                backup_path = backup_existing_db(
+                    data_dir, db_path, encrypted=encrypted, key=key
+                )
                 try:
                     rebuild_fts_trigram(self.conn)
                     self._backfill_sessions()
@@ -118,7 +132,7 @@ class MemoryStore:
                 backup_path=backup_path,
                 cause=exc,
             ) from exc
-        except sqlite3.Error as exc:
+        except DATABASE_ERRORS as exc:
             if self.conn is not None:
                 self.conn.close()
             raise MemoryDatabaseError(
@@ -2190,13 +2204,13 @@ class MemoryStore:
             params.append(max(1, int(limit)))
             try:
                 rows = self.conn.execute(sql, tuple(params)).fetchall()
-            except sqlite3.OperationalError:
+            except OPERATIONAL_ERRORS:
                 safe_q = " ".join(f'"{w.replace(chr(34), chr(34) * 2)}"' for w in q.split() if w)
                 if safe_q:
                     params[0] = safe_q
                     try:
                         rows = self.conn.execute(sql, tuple(params)).fetchall()
-                    except sqlite3.OperationalError:
+                    except OPERATIONAL_ERRORS:
                         rows = []
         title_rows = []
         if re.search(r"[\w\u4e00-\u9fff]", q, re.UNICODE):

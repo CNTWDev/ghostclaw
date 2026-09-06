@@ -281,6 +281,19 @@
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .slider { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: var(--surface3); border: 1px solid var(--border2); border-radius: 17px; transition: background .18s; }
 .slider::before { content: ""; position: absolute; width: 11px; height: 11px; left: 3px; top: 2px; background: var(--sub); border-radius: 50%; transition: transform .18s, background .18s; }
+.settings-inline-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--surface2);
+  font-size: 11.5px;
+  text-decoration: none;
+}
+.settings-inline-link:hover { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); }
 .toggle input:checked + .slider { background: var(--accent); border-color: transparent; }
 .toggle input:checked + .slider::before { transform: translateX(15px); background: #000; }
 

@@ -8,6 +8,7 @@ let _overlay = null;
 let _activeCleanup = null;
 /** Optional: run when modal closes via Escape, backdrop, or header ✕ (e.g. openConfirm → false). */
 let _backdropDismissHandler = null;
+let _restoreFocusTarget = null;
 
 function _ensureOverlay() {
   if (_overlay) return _overlay;
@@ -60,6 +61,9 @@ function _closeCurrent(options = {}) {
     _overlay.classList.remove("closing");
     _overlay.classList.add("hidden");
     if (cleanup) { try { cleanup(); } catch (_) { /* ignore */ } }
+    const focusTarget = _restoreFocusTarget;
+    _restoreFocusTarget = null;
+    if (focusTarget?.isConnected && typeof focusTarget.focus === "function") focusTarget.focus();
   };
   // Fall back to instant hide if animation unsupported or reduced-motion
   const card = _overlay.querySelector(".app-modal-card");
@@ -83,6 +87,7 @@ function _openModal({
   blockEsc = false,
 }) {
   const overlay = _ensureOverlay();
+  _restoreFocusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   // Remove prior listeners / footer so stacked openDialog/openConfirm calls do not leak handlers.
   if (_activeCleanup) {
     try {
@@ -95,8 +100,8 @@ function _openModal({
   _backdropDismissHandler = typeof onBackdropDismiss === "function" ? onBackdropDismiss : null;
 
   const card = overlay.querySelector(".app-modal-card");
+  card.className = "app-modal-card";
   card.classList.toggle("app-modal-card--wide", Boolean(wideCard));
-  card.classList.remove("app-modal-card--document");
   for (const cls of String(cardClass || "").split(/\s+/)) {
     if (cls) card.classList.add(cls);
   }
@@ -115,6 +120,17 @@ function _openModal({
     if (ev.key === "Escape") {
       if (blockEsc) { ev.preventDefault(); return; }
       _closeCurrent();
+      return;
+    }
+    if (ev.key === "Tab") {
+      const focusable = Array.from(card.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) return;
+      const current = focusable.indexOf(document.activeElement);
+      const next = ev.shiftKey
+        ? (current <= 0 ? focusable.length - 1 : current - 1)
+        : (current < 0 || current === focusable.length - 1 ? 0 : current + 1);
+      ev.preventDefault();
+      focusable[next].focus();
     }
   };
 
@@ -154,6 +170,7 @@ function _openModal({
   };
 
   overlay.classList.remove("hidden");
+  requestAnimationFrame(() => footerEl.querySelector("button")?.focus());
 }
 
 export function openConfirm({
@@ -178,6 +195,7 @@ export function openConfirm({
       bodyIsHtml: false,
       closeOnBackdrop,
       wideCard: false,
+      cardClass: "ai-approval-card",
       onBackdropDismiss: () => settle(false),
       actions: [
         {

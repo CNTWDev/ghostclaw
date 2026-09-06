@@ -9,6 +9,12 @@ from pathlib import Path
 
 from hushclaw import __version__
 from hushclaw.cli.backup import cmd_backup_export, cmd_backup_import
+from hushclaw.cli.database import (
+    cmd_database_encrypt,
+    cmd_database_harden,
+    cmd_database_recovery_key,
+    cmd_database_status,
+)
 from hushclaw.cli.repl import repl as _run_repl
 from hushclaw.cli.config import cmd_config_show, cmd_config_path, cmd_config_set
 from hushclaw.cli.setup import cmd_init, cmd_doctor
@@ -370,6 +376,18 @@ def _build_parser() -> argparse.ArgumentParser:
     backup_import_p.add_argument("--skip-config", action="store_true", help="Do not restore hushclaw.toml from the archive")
     backup_import_p.add_argument("--skip-plugins", action="store_true", help="Do not restore config-dir custom tools from the archive")
     backup_import_p.add_argument("--force", action="store_true", help="Overwrite existing restore targets")
+    backup_import_p.add_argument(
+        "--database-key-stdin",
+        action="store_true",
+        help="Read an encrypted backup recovery key from standard input",
+    )
+
+    database_p = sub.add_parser("database", help="Inspect and protect the local database")
+    database_sub = database_p.add_subparsers(dest="database_command")
+    database_sub.add_parser("status", help="Show schema, integrity, encryption, and permission status")
+    database_sub.add_parser("harden", help="Restrict database files and backups to the current OS user")
+    database_sub.add_parser("encrypt", help="Atomically migrate the database and snapshots to SQLCipher")
+    database_sub.add_parser("recovery-key", help="Print the recovery key for offline storage")
 
     reindex_p = sub.add_parser("reindex-memories", help="Rebuild vector index for all notes (run after changing embed_model)")
     reindex_p.add_argument("--batch-size", type=int, default=50, metavar="N",
@@ -443,6 +461,23 @@ def main() -> None:
             sys.exit(cmd_backup_import(args))
         else:
             parser.parse_args(["backup", "--help"])
+        return
+
+    if args.command == "database":
+        try:
+            if args.database_command == "status":
+                sys.exit(cmd_database_status(args))
+            elif args.database_command == "harden":
+                sys.exit(cmd_database_harden(args))
+            elif args.database_command == "encrypt":
+                sys.exit(cmd_database_encrypt(args))
+            elif args.database_command == "recovery-key":
+                sys.exit(cmd_database_recovery_key(args))
+            else:
+                parser.parse_args(["database", "--help"])
+        except Exception as exc:
+            print(f"Database command failed: {exc}", file=sys.stderr)
+            sys.exit(1)
         return
 
     # ---- All other commands need the runtime ----

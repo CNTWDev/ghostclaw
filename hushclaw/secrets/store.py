@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 
+from hushclaw.core.storage_security import ensure_private_dir, ensure_private_file
 from hushclaw.paths import get_data_dir
 
 
@@ -38,6 +39,8 @@ class FileSecretStore:
         return bool(self.get(key, ""))
 
     def _read(self) -> dict:
+        ensure_private_dir(self.path.parent)
+        ensure_private_file(self.path)
         try:
             raw = self.path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -49,7 +52,7 @@ class FileSecretStore:
         return data if isinstance(data, dict) else {}
 
     def _write(self, data: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self.path.parent)
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         os.chmod(tmp, 0o600)

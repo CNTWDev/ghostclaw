@@ -556,9 +556,9 @@ if ($Mode -eq "start") {
 
     Write-Info "Installing/upgrading packages…"
     & $PipExe install --upgrade pip --quiet
-    # Use Push-Location so pip sees ".[server,calendar]" with no path quoting issues
+    # Use Push-Location so pip sees the local extras with no path quoting issues
     Push-Location $RepoDir
-    & $PipExe install -e ".[server,calendar]" --quiet
+    & $PipExe install -e ".[server,calendar,encryption]" --quiet
     Pop-Location
     Write-Ok "HushClaw installed"
     Write-InstallState $LastBackupPath "ok"
@@ -715,6 +715,18 @@ else:
         $migrateOutput | ForEach-Object { Write-StructuredDetail "$_" }
         Write-Ok "Skill migration complete"
     }
+}
+
+# Encrypt only after the legacy plaintext skill migration has read memory.db.
+# The command is idempotent and atomically migrates both the live DB and its
+# schema-migration recovery snapshots.
+if ($Mode -ne "start") {
+    Write-Section "Encrypting Local Database"
+    & $GcExe database encrypt
+    if ($LASTEXITCODE -ne 0) {
+        Die "Database encryption failed. Existing data was left recoverable; run 'hushclaw database status' for details."
+    }
+    Write-Ok "Local database and migration snapshots are encrypted"
 }
 
 # ── Sync bundled skill packages → skill_dir ───────────────────────────────────

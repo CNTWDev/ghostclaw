@@ -241,7 +241,10 @@ def cmd_doctor(args) -> int:
     import socket
     import shutil as _shutil
 
+    from hushclaw.cli.database import database_format
     from hushclaw.config.loader import load_config, validate_config
+    from hushclaw.core.storage_security import is_private_mode, posix_mode
+    from hushclaw.memory.encryption import connect_database, key_status
 
     _hr = "─" * 42
     print(f"\nHushClaw Doctor\n{_hr}")
@@ -302,8 +305,32 @@ def cmd_doctor(args) -> int:
         db_path = data_dir / "memory.db"
         print(f"ℹ memory.db: {db_path}")
         if db_path.exists():
+            data_mode = posix_mode(data_dir)
+            db_mode = posix_mode(db_path)
+            if data_mode is not None:
+                print(f"ℹ storage permissions: dir={data_mode:04o} db={db_mode:04o}")
+                if not is_private_mode(data_dir, directory=True) or not is_private_mode(db_path, directory=False):
+                    print("⚠ Storage is accessible beyond the current OS user; run: hushclaw database harden")
+            db_format = database_format(db_path)
+            if db_format == "sqlite-plaintext":
+                print("⚠ memory.db encryption: off (filesystem permissions only)")
+            elif db_format == "sqlcipher-or-unknown":
+                available, key_source = key_status(data_dir)
+                print(
+                    "✓ memory.db encryption: SQLCipher"
+                    if available
+                    else "✗ memory.db is encrypted or corrupt but no database key is available"
+                )
+                if available:
+                    print(f"ℹ database key source: {key_source}")
+                    if key_source == "private-file":
+                        print("⚠ Platform credential vault unavailable; database key uses an owner-only file")
             try:
-                conn = sqlite3.connect(str(db_path))
+                conn, _encrypted, _key = connect_database(
+                    data_dir,
+                    mode=config.memory.database_encryption,
+                    check_same_thread=False,
+                )
                 try:
                     check = conn.execute("PRAGMA quick_check").fetchone()
                     if check and str(check[0]).lower() == "ok":
@@ -311,13 +338,19 @@ def cmd_doctor(args) -> int:
                     else:
                         print(f"✗ memory.db integrity check failed: {check[0] if check else 'no result'}")
                         error_count += 1
+                    fk_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+                    if fk_violations:
+                        print(f"✗ memory.db foreign-key violations: {len(fk_violations)}")
+                        error_count += 1
+                    else:
+                        print("✓ memory.db foreign keys: ok")
                     conn.execute("CREATE TABLE IF NOT EXISTS _hushclaw_doctor_write_test(x INTEGER)")
                     conn.execute("DROP TABLE _hushclaw_doctor_write_test")
                     conn.commit()
                     print(f"✓ memory.db writable: {db_path}")
                 finally:
                     conn.close()
-            except sqlite3.Error as e:
+            except Exception as e:
                 print(f"✗ memory.db not writable: {db_path} — {e}")
                 msg = str(e).lower()
                 if "locked" in msg:

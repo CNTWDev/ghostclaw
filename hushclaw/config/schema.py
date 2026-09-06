@@ -169,6 +169,9 @@ class ProviderConfig:
 @dataclass
 class MemoryConfig:
     data_dir: Path | None = None
+    # auto: follow an existing file; new databases remain plaintext unless the
+    # installer or `hushclaw database encrypt` enables SQLCipher explicitly.
+    database_encryption: str = "auto"  # auto | off | sqlcipher
     max_recall_results: int = 5
     embed_provider: str = "local"  # local | ollama | openai | anthropic
     embed_model: str = ""          # e.g. "shaw/dmeta-embedding-zh", "bge-m3"; empty = provider default
@@ -176,6 +179,10 @@ class MemoryConfig:
     vec_weight: float = 0.4        # Hybrid search: cosine similarity weight
 
     def __post_init__(self):
+        if self.database_encryption not in {"auto", "off", "sqlcipher"}:
+            raise ConfigError(
+                "memory.database_encryption must be one of: auto, off, sqlcipher"
+            )
         _check_fraction("fts_weight", self.fts_weight)
         _check_fraction("vec_weight", self.vec_weight)
         if not (0.95 <= self.fts_weight + self.vec_weight <= 1.05):

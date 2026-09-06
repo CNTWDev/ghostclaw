@@ -10,6 +10,9 @@ The site-wide component layer is split by responsibility:
   Memories, Tasks, Calendar, Logs, Settings, and document dialogs.
 - `styles/markdown-system.css` owns content typography across every Markdown
   surface. See [Markdown design system](./markdown-design-system.md).
+- `styles/ai-primitives.css` is the final AI interaction contract. It owns
+  state-driven motion and the seven reusable controls below; feature styles
+  must not override their state semantics.
 
 HushClaw uses one product design language. Historical Vector, Pearl, and Steel
 theme choices are retired. Light and dark are brightness modes of the same
@@ -31,6 +34,51 @@ system, not separate themes.
    and windows 14px. Feature modules do not introduce new radius systems.
 6. **Motion explains state.** Use 150–240ms transitions for hover, focus, open,
    and completion. Reduced-motion preferences remain authoritative.
+
+## AI interaction contract
+
+Every AI operation maps backend-specific values onto the same public states:
+
+`idle → queued → running → waiting_user → streaming → completed | failed | cancelled`
+
+The browser stores the normalized state in `data-ai-state`. Features may
+choose user-facing copy, but they must not invent parallel colors, spinners,
+or completion semantics. Raw tool names and payloads belong in the Runtime
+monitor; the default conversation shows a human-readable summary first.
+
+The component set is intentionally small:
+
+| Primitive | Responsibility |
+| --- | --- |
+| `AgentActivity` | One compact active-work signal with elapsed time |
+| `ProcessDisclosure` | Collapsed reasoning/tool summary and optional details |
+| `StreamingMessage` | Stable incremental answer rendering |
+| `PromptComposer` | Files, commands, skills, agents, and sending |
+| `ApprovalCard` | One explicit decision with one dominant action |
+| `TaskRow` | Background work using the shared state language |
+| `ContextCard` | Evidence and sources adjacent to supported content |
+
+Object-local generative actions are an interaction behavior rather than an
+eighth visual primitive. Selecting assistant text may expose Explain, Improve,
+and Shorten actions beside the selection; the action prepares a prompt and
+keeps the user in control.
+
+### Motion levels
+
+| Level | Duration | Use |
+| --- | --- | --- |
+| Instant | 120ms | Press and direct manipulation |
+| Fast | 160ms | Hover, focus, selection |
+| Standard | 240ms | Menus, source cards, state changes |
+| Reveal | 380ms | Process expansion and progressive disclosure |
+
+Continuous motion is allowed only while an operation is active. A settled
+component must become still. `prefers-reduced-motion` disables every loop and
+nonessential transition.
+
+The executable reference is available at `/ui-lab.html`; it is also linked
+from System → Developer Mode. New AI-facing controls should be demonstrated
+there in light and dark mode before shipping.
 
 ## Core tokens
 

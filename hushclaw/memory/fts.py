@@ -5,6 +5,8 @@ import json
 import re
 import sqlite3
 
+from hushclaw.memory.encryption import OPERATIONAL_ERRORS
+
 # Matches any CJK character (CJK Unified, Hiragana/Katakana, Hangul).
 _CJK_CHAR = re.compile(r"[一-鿿぀-ヿ가-힯]")
 _CJK_RUN  = re.compile(r"[一-鿿぀-ヿ가-힯]{2,}")
@@ -109,12 +111,12 @@ class FTSSearch:
 
         try:
             rows = _run(safe_q)
-        except sqlite3.OperationalError:
+        except OPERATIONAL_ERRORS:
             # Query syntax error — try simple prefix match
             safe_q = " ".join(f'"{w}"' for w in query.split() if w)
             try:
                 rows = _run(safe_q)
-            except sqlite3.OperationalError:
+            except OPERATIONAL_ERRORS:
                 return []
 
         return [

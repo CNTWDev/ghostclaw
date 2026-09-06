@@ -298,6 +298,71 @@ def test_service_worker_caches_dynamic_modules_and_styles_for_reload_resilience(
     assert '!url.pathname.startsWith("/modules/")' not in sw_js
 
 
+def test_ai_interaction_primitives_share_one_state_and_motion_contract():
+    index_html = (ROOT / "hushclaw" / "web" / "index.html").read_text(encoding="utf-8")
+    primitives_js = (ROOT / "hushclaw" / "web" / "modules" / "ui" / "ai-primitives.js").read_text(encoding="utf-8")
+    primitives_css = (ROOT / "hushclaw" / "web" / "styles" / "ai-primitives.css").read_text(encoding="utf-8")
+    chat_js = (ROOT / "hushclaw" / "web" / "modules" / "chat.js").read_text(encoding="utf-8")
+    tools_js = (ROOT / "hushclaw" / "web" / "modules" / "chat" / "tools.js").read_text(encoding="utf-8")
+    tasks_js = (ROOT / "hushclaw" / "web" / "modules" / "tasks.js").read_text(encoding="utf-8")
+
+    assert index_html.index("chat-product.css") < index_html.index("ai-primitives.css")
+    for state in ("queued", "running", "waiting_user", "streaming", "completed", "failed", "cancelled"):
+        assert state in primitives_js
+    assert 'element.dataset.aiState = state;' in primitives_js
+    assert 'createAgentActivity({' in chat_js
+    assert 'createProcessDisclosure({' in tools_js
+    assert 'applyAiState(row, taskStatus' in tasks_js
+    assert "--ai-motion-instant: 120ms;" in primitives_css
+    assert "--ai-motion-reveal: 380ms;" in primitives_css
+    assert '@media (prefers-reduced-motion: reduce)' in primitives_css
+    assert "display: block !important;" in primitives_css
+
+
+def test_prompt_composer_unifies_sources_commands_and_selection_actions():
+    index_html = (ROOT / "hushclaw" / "web" / "index.html").read_text(encoding="utf-8")
+    events_js = (ROOT / "hushclaw" / "web" / "modules" / "events.js").read_text(encoding="utf-8")
+    composer_js = (ROOT / "hushclaw" / "web" / "modules" / "ui" / "composer-menu.js").read_text(encoding="utf-8")
+    selection_js = (ROOT / "hushclaw" / "web" / "modules" / "ui" / "selection-actions.js").read_text(encoding="utf-8")
+
+    assert 'aria-label="Add context or action"' in index_html
+    assert "initComposerMenu({" in events_js
+    assert "initSelectionActions({ messages: els.messages, input: els.input });" in events_js
+    assert "Upload files" in composer_js
+    assert "Browse workspace files" in composer_js
+    assert "Use a skill" in composer_js
+    assert "Mention an agent" in composer_js
+    assert '.closest?.(".msg.ai .bubble")' in selection_js
+    assert "Explain" in selection_js
+    assert "Improve" in selection_js
+    assert "Shorten" in selection_js
+
+
+def test_shared_approval_card_traps_and_restores_keyboard_focus():
+    modal_js = (ROOT / "hushclaw" / "web" / "modules" / "modal.js").read_text(encoding="utf-8")
+    primitives_css = (ROOT / "hushclaw" / "web" / "styles" / "ai-primitives.css").read_text(encoding="utf-8")
+
+    assert 'cardClass: "ai-approval-card"' in modal_js
+    assert "_restoreFocusTarget = document.activeElement" in modal_js
+    assert 'if (ev.key === "Tab") {' in modal_js
+    assert 'requestAnimationFrame(() => footerEl.querySelector("button")?.focus());' in modal_js
+    assert ".app-modal-card.ai-approval-card" in primitives_css
+
+
+def test_ui_lab_is_an_executable_light_and_dark_component_reference():
+    lab_html = (ROOT / "hushclaw" / "web" / "ui-lab.html").read_text(encoding="utf-8")
+    lab_js = (ROOT / "hushclaw" / "web" / "modules" / "ui-lab.js").read_text(encoding="utf-8")
+    settings_js = (ROOT / "hushclaw" / "web" / "modules" / "settings" / "tab-system.js").read_text(encoding="utf-8")
+    sw_js = (ROOT / "hushclaw" / "web" / "sw.js").read_text(encoding="utf-8")
+
+    for primitive in ("AgentActivity", "ProcessDisclosure", "StreamingMessage", "ApprovalCard", "TaskRow", "ContextCard", "PromptComposer"):
+        assert primitive in lab_html
+    assert 'root.dataset.mode = dark ? "dark" : "light";' in lab_js
+    assert 'href="/ui-lab.html"' in settings_js
+    assert '"/ui-lab.html"' in sw_js
+    assert '"/styles/ai-primitives.css"' in sw_js
+
+
 def test_generated_file_badge_separates_attention_from_per_file_read_state():
     files_js = (ROOT / "hushclaw" / "web" / "modules" / "panels" / "files.js").read_text(encoding="utf-8")
     websocket_js = (ROOT / "hushclaw" / "web" / "modules" / "websocket.js").read_text(encoding="utf-8")

@@ -88,7 +88,10 @@ class SQLiteMemoryPort(MemoryPort):
         self._lock = _conn_lock(conn) if conn is not None else None
         self._read_connections = getattr(store, "_read_connections", None)
         if self._read_connections is None and getattr(store, "data_dir", None) is not None:
-            self._read_connections = SQLiteReadConnections(store.data_dir)
+            self._read_connections = SQLiteReadConnections(
+                store.data_dir,
+                database_encryption=getattr(store, "database_encryption", "auto"),
+            )
             setattr(store, "_read_connections", self._read_connections)
 
     def _locked(self, fn):
